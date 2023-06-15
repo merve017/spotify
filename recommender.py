@@ -1,10 +1,15 @@
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.cluster import KMeans
 from sklearn.pipeline import Pipeline
 from sklearn.neighbors import NearestNeighbors
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+import re
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords
 
 
 # Read the data from the CSV file
@@ -14,9 +19,11 @@ global df_artists_tracks_orig
 df_artists_tracks_orig = None
 
 METRIC_FEATURES = ['acousticness', 'danceability', 'duration_ms', 'energy', 'instrumentalness', 'key', 'liveness', 
-                   'loudness', 'mode', 'popularity', 'speechiness', 'tempo', 'time_signature', 'valence', 
-                   'artist_popularity', 'followers']
+                   'loudness', 'mode', 'popularity', 'speechiness', 'tempo', 'time_signature', 'valence'
+                   ,'artist_popularity', 'followers'
+                   ]
 
+#TODO: only relevant for jupyter notebook
 def main2():
     global df_artists_tracks, df_artists_tracks_orig
     df_artists, df_tracks = read_data()
@@ -48,7 +55,8 @@ def transform_data(df_artists, df_tracks):
 def drop_columns(df_artists_tracks):
     columns_to_keep = ['acousticness', 'danceability', 'duration_ms', 'energy', 'instrumentalness', 'key', 'liveness', 
                        'loudness', 'mode', 'popularity', 'speechiness', 'tempo', 'time_signature', 'valence',
-                       'artist_popularity', 'followers', 'genres', 'tracks_id', 'tracks_name', 'artists_id', 
+                       'artist_popularity', 'followers', 
+                       'genres', 'tracks_id', 'tracks_name', 'artists_id', 
                        'artists_name', 'album_id', 'uri', 'preview_url', 'country', 'lyrics']
     df_artists_tracks = df_artists_tracks[columns_to_keep]
     return df_artists_tracks
@@ -56,57 +64,72 @@ def drop_columns(df_artists_tracks):
 def build_recommendation_metric(df_artists_tracks):
     metric_pipeline = Pipeline(steps=[
         ('scaler', MinMaxScaler()),
-        ('dbscan', DBSCAN(eps=0.3, min_samples=5))
+        ('dbscan', DBSCAN(eps=0.5, min_samples=7))
     ])
     # Fit and transform the data
     df_artists_tracks['metric_cluster'] = metric_pipeline.fit_predict(df_artists_tracks[METRIC_FEATURES])
     return df_artists_tracks
-
-def build_recommendation_genre(df_artists_tracks, n_clusters=105):
-    # Create binarized genres and put it to a DataFrame
-    mlb = MultiLabelBinarizer()
-    genres_binarized = mlb.fit_transform(df_artists_tracks['genres'])
-    genres_df = pd.DataFrame(genres_binarized, columns=mlb.classes_)
-    df_artists_tracks = pd.concat([df_artists_tracks.drop('genres', axis=1), genres_df], axis=1)
-    # Define a pipeline for genre features
-    genre_pipeline = Pipeline(steps=[
-        ('kmeans', KMeans(n_clusters=n_clusters))
-    ])
-    # Fit the data
-    genre_labels = genre_pipeline.fit_predict(genres_df)
-    df_artists_tracks['genre_cluster'] = genre_labels
-    return df_artists_tracks
     
-def recommend_songs_knn(df, song_id, n_recommendations, priority_factor=5):
+def recommend_songs_knn(df, song_id, n_recommendations, priority_factor=100):
+    print(song_id)
     additional_features = ['genre_cluster', 'metric_cluster']
     metric_features = METRIC_FEATURES + additional_features
 
+    # filter the dataframe on the genre_cluster of the song_id
+    #df_scaled = df[df['genre_cluster'] == df[df['tracks_id'] == song_id]['genre_cluster'].values[0]].copy()
     df_scaled = df.copy()
-    df_scaled[additional_features] *= priority_factor
+    """df_scaled[additional_features] *= priority_factor
 
-    # Fit the NearestNeighbors model
-    knn = NearestNeighbors(n_neighbors=n_recommendations, metric='cosine')
-    knn.fit(df_scaled[metric_features])
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),  # Normalize the data
+        ('knn', NearestNeighbors(n_neighbors=n_recommendations, metric='cosine'))
+    ])"""
+
+
+        # Scale all metric features
+    scaler = StandardScaler()
+    df_scaled[metric_features] = scaler.fit_transform(df_scaled[metric_features])
+
+    # Apply priority factors to genre_cluster and metric_cluster
+    df_scaled['genre_cluster'] *= priority_factor
+    df_scaled['metric_cluster'] *= priority_factor
+
+    # Define the pipeline
+    pipeline = Pipeline([
+        ('knn', NearestNeighbors(n_neighbors=n_recommendations, metric='euclidian'))
+    ])
+
+    pipeline.fit(df_scaled[metric_features])
     
     song_features = df_scaled[df_scaled['tracks_id'] == song_id][metric_features]
+    #song_features_scaled = pipeline.named_steps['scaler'].transform(song_features)
+    song_features_scaled = song_features
+    #print(song_features)
+    #song_row = df_scaled[df_scaled['tracks_id'] == song_id]
 
-    distances, indices = knn.kneighbors(song_features)
+    distances, indices = pipeline.named_steps['knn'].kneighbors(song_features_scaled)
 
-    song_list = [df.iloc[indices.flatten()[i]]['tracks_id'] 
-    for i in range(1, len(distances.flatten()))
+    song_list = [df_scaled.iloc[indices.flatten()[i]]['tracks_id'] 
+        for i in range(1, len(distances.flatten()))
         if print(f'{i}: {df.iloc[indices.flatten()[i]]["tracks_id"]}, with distance of {distances.flatten()[i]}') is None]
-    return df[df['tracks_id'].isin(song_list)]
 
+    return df[df['tracks_id'].isin(song_list)]
+        
+    
 
 def recommend_songs(song_id, df, n_recommendations):
     return recommend_songs_knn(df, song_id, n_recommendations)
-    #print(df[df['tracks_id'].isin(list)]).value_counts()
-    #return df[df['tracks_id'].isin(list)]
 
 def search_songs_and_artists(search, df):
-    tracks_match = df[df['tracks_name'].str.contains(search, case=False)]
-    artists_match = df[df['artists_name'].str.contains(search, case=False)]
-    return pd.concat([tracks_match, artists_match]).drop_duplicates()
+    search = search.upper()
+    #put artists name and tracks_name together and look for the search string
+    #create new data frame df_new with the new column artists name and tracks name
+    df_new = df.copy()
+    df_new['artists_tracks_name'] = df_new['artists_name'] + ' ' + df_new['tracks_name']
+    df_new['artists_tracks_name'] = df_new['artists_tracks_name'].str.upper()
+    tracks_match = df_new[df_new['artists_tracks_name'].str.contains(search, case=False)]
+    #tracks_match = df_new[df['tracks_name'].str.contains(search, case=False)]
+    return tracks_match.drop_duplicates()
 
 def getGenres():
     global df_artists_tracks_orig
@@ -119,3 +142,35 @@ def getGenre_tracks(genre):
 def get_artists_tracks():
     global df_artists_tracks
     return df_artists_tracks    
+
+def build_recommendation_genre(df_artists_tracks):
+
+    stop_words=stopwords.words('english')
+    lemmatizer = WordNetLemmatizer()
+    def preprocess_text(text):
+        text = re.sub(r'\[|\]|\'|,', '', text)    
+        text = text.lower()
+        text = text.replace('hip hop', 'hip-hop')
+        text = text.replace('r&b', 'r-n-b')
+        text = text.replace('death metal', 'death-metal')
+        words = text.split()    
+        words = [lemmatizer.lemmatize(word) for word in words if word not in stop_words]
+        text = ' '.join(words)
+        return text
+    
+    df_artists_tracks['genres_new'] = df_artists_tracks['genres'].apply(preprocess_text)
+    df_artists_tracks_copy = df_artists_tracks[df_artists_tracks['genres_new']!=''].copy()
+
+    vectorizer = TfidfVectorizer(stop_words=stopwords.words('english'))
+    features = vectorizer.fit_transform(df_artists_tracks_copy['genres_new'])
+    num_clusters = 105  
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
+    kmeans.fit(features)
+    df_artists_tracks_copy['genre_cluster'] = kmeans.labels_
+    #put the cluster labels back to the original dataframe
+    df_artists_tracks.loc[df_artists_tracks_copy.index, 'genre_cluster'] = df_artists_tracks_copy['genre_cluster']
+
+    # fill empty genre clusters with -1
+    df_artists_tracks['genre_cluster'] = df_artists_tracks['genre_cluster'].fillna(-1)
+
+    return df_artists_tracks

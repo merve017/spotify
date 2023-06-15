@@ -1,11 +1,10 @@
-import json
 import streamlit as st
 from recommender import recommend_songs, main, search_songs_and_artists, getGenres, getGenre_tracks, get_artists_tracks
 import spotify_conn as sp
 from streamlit_option_menu import option_menu
 from streamlit_card import card
 import spotipy as spotify
-import streamlit.components.v1 as components
+import pandas as pd
 
 #st.title('Spotify 2.0')
 
@@ -57,34 +56,19 @@ elif choose==('Dev'):
 # Then, display your pages
 if st.session_state.page == 'Home':
     st.header   ("Discover!")
-    # Choose the number of columns you want to display
-    # Fetch unique genres from the DataFrame
-    #genres = getGenres()
-    # Loop over your genres and put each in a column
-
-    # for i in range(0, len(genres)):
-    #     genre = genres[i]
-    #     with st.expander(genre):
-    #         st.write("Songs in this genre:")
-    #         #genre_tracks = getGenre_tracks(genre)
-    #         for track in genre_tracks:
-    #             st.write(track)
-    #             if st.button('Play '+track):
-    #                 # Implement your play functionality here
-    #                 pass
     st.subheader("Top 10 Popular Songs:")
     df = df_artists_tracks.sort_values(by=['popularity'], ascending=False)
-    for i in range(0,10):
-        col1, col2, col3 = st.columns([1,1,2])  # Adjust the ratio based on your needs
-        track = df.iloc[i]
+    for i in range(0,10,2):
+        col1, col2 = st.columns([1,1])  # Adjust the ratio based on your needs
         with col1:
-            st.write(track['tracks_name'])
-        with col2:
-            st.write(track['artists_name'])
-        with col3:
-            track_id = track['tracks_id']
+            track_id = df.iloc[i]['tracks_id']
+            print(track_id)
             st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
-
+        with col2:
+            i+=1
+            track_id = df.iloc[i]['tracks_id']
+            print(track_id)
+            st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
 
     
 
@@ -92,22 +76,22 @@ elif st.session_state.page == 'Browse':
     st.subheader("Search for songs and artists")
     search = st.text_input('Search for a song or artist:')
     #st.session_state.key = None
-    st.write(st.session_state.key)
+    #st.write(st.session_state.key)
     if search:
-        st.write('You searched for:', search) #TODO auskommentieren
-        st.write(st.session_state['searchText']) #TODO auskommentieren
+        #st.write('You searched for:', search) #TODO auskommentieren
+        #st.write(st.session_state['searchText']) #TODO auskommentieren
         if(st.session_state['searchText']!=search):
             st.session_state.key = None
             st.session_state['searchText'] = search
         matching_songs =search_songs_and_artists(search, df_artists_tracks)
         if matching_songs.empty:
-            st.write('Keine übereinstimmenden Songs/Artists gefunden.')
+            st.write('No matching songs/artists found.')
         else:
             if st.session_state.key == None:
                 st.session_state.recommendations = matching_songs
-                st.write('Übereinstimmende Songs/Artists:')
+                st.write('Matching Songs/Artists:')
             else:
-                st.write('Empfohlene Songs:')
+                st.write('Recommended songs:')
                 st.session_state.recommendations = recommend_songs(st.session_state.key, df_artists_tracks, 11)
             for i in range(len(st.session_state.recommendations)-1):
                 #create columns with the names of the artists and songs and a button to play the song
@@ -115,18 +99,42 @@ elif st.session_state.page == 'Browse':
                 track_name = row['tracks_name']
                 artist_name = row['artists_name']
                 track_id = row['tracks_id']
-                col1, col2, col3, col4, col5 = st.columns([1,1,1,1,1])  # Adjust the ratio based on your needs
+                #col1, col2, col3, col4 = st.columns([1,1,1,1])  # Adjust the ratio based on your needs
+                col1, col2= st.columns([2,1])  # Adjust the ratio based on your needs
                 with col1:
-                    st.write(track_name)
+                #    st.write(track_name)
+                #with col2:
+                #    st.write(artist_name)
+                #with col3: 
+                    st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
+                    #st.markdown( "<style>audio::-webkit-media-controls-enclosure {background-color:#1db954;}</style>", unsafe_allow_html=True)
+                    #st.audio(row['preview_url'], format="audio/mp3")  
                 with col2:
-                    st.write(artist_name)
-                with col3: 
-                    st.markdown( "<style>audio::-webkit-media-controls-enclosure {background-color:#1db954;}</style>", unsafe_allow_html=True)
-                    st.audio(row['preview_url'], format="audio/mp3")  
-                with col4:
-                    st.button('Ähnliche Tracks', key = "button"+track_id, on_click=increment_counter, args=(track_id, ))
-                with col5:
-                    st.write(track_id)
+                    st.button('Similar tracks', key = "button"+track_id, on_click=increment_counter, args=(track_id, ))
+            st.dataframe(df_artists_tracks[df_artists_tracks['tracks_id']==st.session_state.key])
+            st.dataframe(st.session_state.recommendations)    
+    else:
+        st.session_state.recommendations = df_artists_tracks.sample(10)
+        for i in range(len(st.session_state.recommendations)-1):
+            #create columns with the names of the artists and songs and a button to play the song
+            row = st.session_state.recommendations.iloc[i]
+            track_name = row['tracks_name']
+            artist_name = row['artists_name']
+            track_id = row['tracks_id']
+            #col1, col2, col3, col4 = st.columns([1,1,1,1])  # Adjust the ratio based on your needs
+            col1, col2= st.columns([2,1])  # Adjust the ratio based on your needs
+            with col1:
+            #    st.write(track_name)
+            #with col2:
+            #    st.write(artist_name)
+            #with col3: 
+                st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
+                #st.markdown( "<style>audio::-webkit-media-controls-enclosure {background-color:#1db954;}</style>", unsafe_allow_html=True)
+                #st.audio(row['preview_url'], format="audio/mp3")  
+            with col2:
+                st.button('Similar tracks', key = "button"+track_id, on_click=increment_counter, args=(track_id, ))
+        st.dataframe(df_artists_tracks[df_artists_tracks['tracks_id']==st.session_state.key])
+        st.dataframe(st.session_state.recommendations)    
 
 elif st.session_state.page == 'Dev':
 

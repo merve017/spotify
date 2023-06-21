@@ -10,6 +10,8 @@ from sklearn.cluster import KMeans
 import re
 from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
+import ast as ast
+
 
 
 # Read the data from the CSV file
@@ -35,8 +37,8 @@ def main():
     df_artists, df_tracks = read_data()
     df_artists_tracks, df_artists_tracks_orig = transform_data(df_artists, df_tracks)
     df_artists_tracks = drop_columns(df_artists_tracks)
-    df_artists_tracks = build_recommendation_metric(df_artists_tracks)
     df_artists_tracks = build_recommendation_genre(df_artists_tracks)
+    df_artists_tracks = build_recommendation_metric(df_artists_tracks)
     
 def read_data():
     df_artists = pd.read_csv('data/spotify_artists.csv', sep=',') 
@@ -66,14 +68,20 @@ def build_recommendation_metric(df_artists_tracks):
         ('scaler', MinMaxScaler()),
         ('dbscan', DBSCAN(eps=0.5, min_samples=7))
     ])
+    metric_features = METRIC_FEATURES #+ ['genre_cluster']
     # Fit and transform the data
-    df_artists_tracks['metric_cluster'] = metric_pipeline.fit_predict(df_artists_tracks[METRIC_FEATURES])
+    df_artists_tracks['metric_cluster'] = metric_pipeline.fit_predict(df_artists_tracks[metric_features])
     return df_artists_tracks
     
-def recommend_songs_knn(df, song_id, n_recommendations, priority_factor=100):
+def recommend_songs_knn(df, song_id, n_recommendations, priority_factor=5):
     print(song_id)
     additional_features = ['genre_cluster', 'metric_cluster']
     metric_features = METRIC_FEATURES + additional_features
+
+    #drop 'genre_cluster' and 'metric_cluster' from the metric_features
+
+    #metric_features = [feature for feature in metric_features if feature not in additional_features]
+
 
     # filter the dataframe on the genre_cluster of the song_id
     #df_scaled = df[df['genre_cluster'] == df[df['tracks_id'] == song_id]['genre_cluster'].values[0]].copy()
@@ -96,7 +104,7 @@ def recommend_songs_knn(df, song_id, n_recommendations, priority_factor=100):
 
     # Define the pipeline
     pipeline = Pipeline([
-        ('knn', NearestNeighbors(n_neighbors=n_recommendations, metric='euclidian'))
+        ('knn', NearestNeighbors(n_neighbors=n_recommendations, metric='cosine'))
     ])
 
     pipeline.fit(df_scaled[metric_features])
@@ -131,9 +139,20 @@ def search_songs_and_artists(search, df):
     #tracks_match = df_new[df['tracks_name'].str.contains(search, case=False)]
     return tracks_match.drop_duplicates()
 
-def getGenres():
-    global df_artists_tracks_orig
-    return df_artists_tracks_orig['genres'].unique().tolist()
+def getGenres(df):
+    unique_genres = df['genres'].apply(ast.literal_eval).explode().unique()
+
+    cleaned_genres = []
+    for genre in unique_genres:
+        if not genre:  # Check if genre is empty
+            genre = 'Unknown'
+        elif isinstance(genre, list):  # Check if genre is a list
+            genre = ', '.join(genre)  # Convert list to string
+        cleaned_genres.append(genre)
+    
+    # Remove duplicates
+    cleaned_genres = list(set(cleaned_genres))
+    return cleaned_genres
 
 def getGenre_tracks(genre):
     global df_artists_tracks_orig
@@ -144,7 +163,6 @@ def get_artists_tracks():
     return df_artists_tracks    
 
 def build_recommendation_genre(df_artists_tracks):
-
     stop_words=stopwords.words('english')
     lemmatizer = WordNetLemmatizer()
     def preprocess_text(text):
@@ -167,10 +185,6 @@ def build_recommendation_genre(df_artists_tracks):
     kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init='auto')
     kmeans.fit(features)
     df_artists_tracks_copy['genre_cluster'] = kmeans.labels_
-    #put the cluster labels back to the original dataframe
     df_artists_tracks.loc[df_artists_tracks_copy.index, 'genre_cluster'] = df_artists_tracks_copy['genre_cluster']
-
-    # fill empty genre clusters with -1
     df_artists_tracks['genre_cluster'] = df_artists_tracks['genre_cluster'].fillna(-1)
-
     return df_artists_tracks

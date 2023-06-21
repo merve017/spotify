@@ -5,6 +5,7 @@ from streamlit_option_menu import option_menu
 from streamlit_card import card
 import spotipy as spotify
 import pandas as pd
+import ast as ast
 
 #st.title('Spotify 2.0')
 
@@ -57,16 +58,17 @@ elif choose==('Dev'):
 if st.session_state.page == 'Home':
     st.header   ("Discover!")
     st.subheader("Top 10 Popular Songs:")
-    df = df_artists_tracks.sort_values(by=['popularity'], ascending=False)
-    for i in range(0,10,2):
+    filtered_df = df_artists_tracks.sort_values(by=['popularity'], ascending=False)
+    rows = filtered_df.shape[0] if filtered_df.shape[0]<10  else 10
+    for i in range(0,rows,2):
         col1, col2 = st.columns([1,1])  # Adjust the ratio based on your needs
         with col1:
-            track_id = df.iloc[i]['tracks_id']
+            track_id = filtered_df.iloc[i]['tracks_id']
             print(track_id)
             st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
         with col2:
             i+=1
-            track_id = df.iloc[i]['tracks_id']
+            track_id = filtered_df.iloc[i]['tracks_id']
             print(track_id)
             st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
 
@@ -102,10 +104,6 @@ elif st.session_state.page == 'Browse':
                 #col1, col2, col3, col4 = st.columns([1,1,1,1])  # Adjust the ratio based on your needs
                 col1, col2= st.columns([2,1])  # Adjust the ratio based on your needs
                 with col1:
-                #    st.write(track_name)
-                #with col2:
-                #    st.write(artist_name)
-                #with col3: 
                     st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
                     #st.markdown( "<style>audio::-webkit-media-controls-enclosure {background-color:#1db954;}</style>", unsafe_allow_html=True)
                     #st.audio(row['preview_url'], format="audio/mp3")  
@@ -180,8 +178,24 @@ elif st.session_state.page == 'Dev':
 
     with tab3:
         st.write("Tab für weiter Tests")
-        top5 = df_artists_tracks.head(100)
-        st.dataframe(top5)
+        selected_genre = st.selectbox('Select a genre:', getGenres(df_artists_tracks))
+        filtered_df = df_artists_tracks[df_artists_tracks['genres'].apply(lambda x: selected_genre in ast.literal_eval(x))]
+        st.dataframe(filtered_df)
+        #top5 = df_artists_tracks.head(100)
+        #st.dataframe(top5)
+        rows = filtered_df.shape[0] if filtered_df.shape[0]<10  else 10
+        for i in range(0,rows,2):
+            col1, col2 = st.columns([1,1])  # Adjust the ratio based on your needs
+            with col1:
+                track_id = filtered_df.iloc[i]['tracks_id']
+                print(track_id)
+                st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
+            with col2:
+                i+=1
+                track_id = filtered_df.iloc[i]['tracks_id']
+                print(track_id)
+                st.markdown(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="100" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>', unsafe_allow_html=True)
+
 
     
 
